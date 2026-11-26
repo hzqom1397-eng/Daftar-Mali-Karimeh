@@ -1,3 +1,4 @@
+
 name: Build Karimeh Finance APK
 
 on:
@@ -24,14 +25,9 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
-          packages: |
-            platforms;android-35
-            build-tools;35.0.0
-
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
