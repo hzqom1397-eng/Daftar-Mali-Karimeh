@@ -1,4 +1,3 @@
-
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -14,6 +13,22 @@ android {
         targetSdk 35
         versionCode 1
         versionName '1.0'
+    }
+
+    signingConfigs {
+        release {
+            storeFile file("karimeh-release.jks")
+            storePassword System.getenv("KARIMEH_STORE_PASSWORD") ?: ""
+            keyAlias System.getenv("KARIMEH_KEY_ALIAS") ?: "karimeh"
+            keyPassword System.getenv("KARIMEH_KEY_PASSWORD") ?: ""
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
     }
 
     compileOptions {
