@@ -23,16 +23,46 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: sdkmanager "build-tools;35.0.0"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
+      - name: Restore release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KARIMEH_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > karimeh-release.jks
+          test -s karimeh-release.jks
+
+      - name: Build APK
         run: gradle assembleDebug
 
-      - name: Upload APK
+      - name: Sign APK with Karimeh key
+        env:
+          STORE_PASSWORD: ${{ secrets.KARIMEH_STORE_PASSWORD }}
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks karimeh-release.jks \
+            --ks-key-alias karimeh \
+            --ks-pass env:STORE_PASSWORD \
+            --key-pass env:STORE_PASSWORD \
+            --out app/build/outputs/apk/debug/karimeh-release.apk \
+            app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Verify APK signature
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            app/build/outputs/apk/debug/karimeh-release.apk
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: Daftar-Mali-Karimeh-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Karimeh-Finance-Signed-APK
+          path: app/build/outputs/apk/debug/karimeh-release.apk
