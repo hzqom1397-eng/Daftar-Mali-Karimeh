@@ -38,6 +38,10 @@ class MainActivity : Activity() {
     private lateinit var headerDate: TextView
     private lateinit var summary: TextView
     private lateinit var listBox: LinearLayout
+    private lateinit var pageContainer: FrameLayout
+    private lateinit var bottomNav: LinearLayout
+
+    private var currentPage = "home"
 
     private var chosenDate = Jalali.today()
     private val handler = Handler(Looper.getMainLooper())
@@ -74,24 +78,135 @@ class MainActivity : Activity() {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
 
-        val scroll = ScrollView(this)
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(24))
-        }
-
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(18))
+            setPadding(dp(18), dp(16), dp(18), dp(16))
             setBackgroundColor(GREEN)
         }
 
-        header.addView(label("دفتر مالی کریمه", 24, Color.WHITE, true))
-        headerDate = label("", 14, Color.WHITE)
+        header.addView(label("دفتر مالی کریمه", 23, Color.WHITE, true))
+        headerDate = label("", 13, Color.WHITE)
         header.addView(headerDate)
-        root.addView(header)
+        root.addView(header, LinearLayout.LayoutParams(-1, -2))
 
-        content.addView(label("ثبت تراکنش", 20, GREEN, true))
+        pageContainer = FrameLayout(this).apply {
+            setBackgroundColor(CREAM)
+        }
+        root.addView(
+            pageContainer,
+            LinearLayout.LayoutParams(-1, 0, 1f)
+        )
+
+        bottomNav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.WHITE)
+            elevation = dp(8).toFloat()
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+        root.addView(
+            bottomNav,
+            LinearLayout.LayoutParams(-1, dp(64))
+        )
+
+        setContentView(root)
+        buildBottomNavigation()
+        showPage("home")
+    }
+
+    private fun buildBottomNavigation() {
+        bottomNav.removeAllViews()
+
+        val items = listOf(
+            Triple("home", "خانه", "⌂"),
+            Triple("transactions", "تراکنش‌ها", "＋"),
+            Triple("accounts", "حساب‌ها", "▤"),
+            Triple("reports", "گزارش‌ها", "▥")
+        )
+
+        items.forEach { item ->
+            val button = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(2), dp(4), dp(2), dp(4))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { showPage(item.first) }
+            }
+
+            val icon = TextView(this).apply {
+                text = item.third
+                textSize = 21f
+                gravity = Gravity.CENTER
+                setTextColor(if (currentPage == item.first) GREEN else Color.GRAY)
+            }
+            val title = TextView(this).apply {
+                text = item.second
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTypeface(null, if (currentPage == item.first) Typeface.BOLD else Typeface.NORMAL)
+                setTextColor(if (currentPage == item.first) GREEN else Color.GRAY)
+            }
+
+            button.addView(icon)
+            button.addView(title)
+            bottomNav.addView(
+                button,
+                LinearLayout.LayoutParams(0, -1, 1f)
+            )
+        }
+    }
+
+    private fun showPage(page: String) {
+        currentPage = page
+        buildBottomNavigation()
+        pageContainer.removeAllViews()
+
+        val scroll = ScrollView(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(24))
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+        scroll.addView(content)
+        pageContainer.addView(scroll)
+
+        when (page) {
+            "home" -> buildHomePage(content)
+            "transactions" -> buildTransactionsPage(content)
+            "accounts" -> buildAccountsPage(content)
+            "reports" -> buildReportsPage(content)
+        }
+        refresh()
+    }
+
+    private fun buildHomePage(content: LinearLayout) {
+        content.addView(label("نمای کلی مالی", 21, GREEN, true))
+        summary = label("", 16, DARK, true).apply {
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            setBackgroundColor(Color.WHITE)
+        }
+        content.addView(summary, matchWrap())
+
+        content.addView(label("دسترسی سریع", 18, GREEN, true))
+        val addButton = Button(this).apply {
+            text = "＋  ثبت تراکنش جدید"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(GREEN)
+            setOnClickListener { showPage("transactions") }
+        }
+        content.addView(addButton, matchWrap())
+
+        content.addView(label("آخرین تراکنش‌ها", 18, GREEN, true))
+        listBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        content.addView(listBox, matchWrap())
+    }
+
+    private fun buildTransactionsPage(content: LinearLayout) {
+        content.addView(label("ثبت تراکنش", 21, GREEN, true))
         content.addView(label("نوع ثبت", 14, DARK, true))
 
         val type = Spinner(this)
@@ -133,7 +248,7 @@ class MainActivity : Activity() {
 
         val dateText = TextView(this).apply {
             text = "تاریخ: ${chosenDate.format()}"
-            textSize = 16f
+            textSize = 15f
             setTextColor(DARK)
             setPadding(dp(8), dp(12), dp(8), dp(12))
         }
@@ -142,7 +257,6 @@ class MainActivity : Activity() {
             text = "انتخاب تاریخ"
             setTextColor(Color.WHITE)
             setBackgroundColor(GREEN)
-
             setOnClickListener {
                 showJalaliPicker { selected ->
                     chosenDate = selected
@@ -151,10 +265,7 @@ class MainActivity : Activity() {
             }
         }
 
-        dateRow.addView(
-            dateText,
-            LinearLayout.LayoutParams(0, dp(48), 1f)
-        )
+        dateRow.addView(dateText, LinearLayout.LayoutParams(0, dp(48), 1f))
         dateRow.addView(dateButton)
         content.addView(dateRow)
 
@@ -163,13 +274,11 @@ class MainActivity : Activity() {
             textSize = 17f
             setTextColor(Color.WHITE)
             setBackgroundColor(GREEN)
-
             setOnClickListener {
                 val raw = amount.text.toString()
                     .trim()
                     .replace(",", "")
                     .replace("٬", "")
-
                 val value = raw.toLongOrNull()
 
                 if (value == null || value <= 0) {
@@ -194,14 +303,11 @@ class MainActivity : Activity() {
                 )
 
                 saveData()
-
                 amount.setText("")
                 category.setText("")
                 note.setText("")
-
                 chosenDate = Jalali.today()
                 dateText.text = "تاریخ: ${chosenDate.format()}"
-
                 refresh()
 
                 Toast.makeText(
@@ -211,38 +317,43 @@ class MainActivity : Activity() {
                 ).show()
             }
         }
-
         content.addView(addButton, matchWrap())
 
-        content.addView(label("خلاصه حساب", 20, GREEN, true))
-
-        summary = label("", 16, DARK, true)
-        summary.setPadding(dp(12), dp(12), dp(12), dp(12))
-        summary.setBackgroundColor(Color.WHITE)
-        content.addView(summary, matchWrap())
-
-        content.addView(label("تراکنش‌ها", 20, GREEN, true))
-
+        content.addView(label("فهرست تراکنش‌ها", 19, GREEN, true))
         listBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
         content.addView(listBox, matchWrap())
+    }
 
-        content.addView(
-            label(
-                "اطلاعات روی همین گوشی ذخیره می‌شود.",
-                12,
-                Color.GRAY
-            )
-        )
+    private fun buildAccountsPage(content: LinearLayout) {
+        content.addView(label("حساب‌های باز", 21, GREEN, true))
+        summary = label("", 16, DARK, true).apply {
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            setBackgroundColor(Color.WHITE)
+        }
+        content.addView(summary, matchWrap())
 
-        scroll.addView(content)
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(-1, 0, 1f)
-        )
+        content.addView(label("بدهکاری و بستانکاری", 18, GREEN, true))
+        listBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        content.addView(listBox, matchWrap())
+    }
 
-        setContentView(root)
+    private fun buildReportsPage(content: LinearLayout) {
+        content.addView(label("گزارش‌های مالی", 21, GREEN, true))
+        summary = label("", 16, DARK, true).apply {
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            setBackgroundColor(Color.WHITE)
+        }
+        content.addView(summary, matchWrap())
+
+        content.addView(label("گزارش این ماه", 18, GREEN, true))
+        listBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        content.addView(listBox, matchWrap())
     }
 
     private fun updateClock() {
@@ -257,39 +368,62 @@ class MainActivity : Activity() {
     }
 
     private fun refresh() {
-        val income = txs
-            .filter { it.kind == "واریزی" }
-            .sumOf { it.amount }
+        val income = txs.filter { it.kind == "واریزی" }.sumOf { it.amount }
+        val expense = txs.filter { it.kind == "برداشت" }.sumOf { it.amount }
+        val debt = txs.filter { it.kind == "بدهکاری" }.sumOf { it.amount }
+        val credit = txs.filter { it.kind == "بستانکاری" }.sumOf { it.amount }
 
-        val expense = txs
-            .filter { it.kind == "برداشت" }
-            .sumOf { it.amount }
+        if (!::summary.isInitialized || !::listBox.isInitialized) return
 
-        val debt = txs
-            .filter { it.kind == "بدهکاری" }
-            .sumOf { it.amount }
+        val today = Jalali.today()
+        val monthPrefix = String.format(Locale.US, "%04d/%02d/", today.year, today.month)
+        val monthlyTxs = txs.filter { it.date.startsWith(monthPrefix) }
+        val monthlyIncome = monthlyTxs.filter { it.kind == "واریزی" }.sumOf { it.amount }
+        val monthlyExpense = monthlyTxs.filter { it.kind == "برداشت" }.sumOf { it.amount }
 
-        val credit = txs
-            .filter { it.kind == "بستانکاری" }
-            .sumOf { it.amount }
-
-        summary.text =
-            "کل واریزی: ${money(income)} تومان\n" +
-            "کل برداشت: ${money(expense)} تومان\n" +
-            "مانده حساب: ${money(income - expense)} تومان\n" +
-            "بدهکاری: ${money(debt)} تومان\n" +
-            "بستانکاری: ${money(credit)} تومان"
+        summary.text = when (currentPage) {
+            "accounts" ->
+                "مجموع بدهکاری: ${money(debt)} تومان\n" +
+                "مجموع بستانکاری: ${money(credit)} تومان\n" +
+                "اختلاف حساب: ${money(credit - debt)} تومان"
+            "reports" ->
+                "واریزی این ماه: ${money(monthlyIncome)} تومان\n" +
+                "برداشت این ماه: ${money(monthlyExpense)} تومان\n" +
+                "مانده این ماه: ${money(monthlyIncome - monthlyExpense)} تومان\n" +
+                "تعداد تراکنش‌های ماه: ${monthlyTxs.size}"
+            "transactions" ->
+                "تعداد تراکنش‌ها: ${txs.size}\n" +
+                "مانده حساب: ${money(income - expense)} تومان"
+            else ->
+                "کل واریزی: ${money(income)} تومان\n" +
+                "کل برداشت: ${money(expense)} تومان\n" +
+                "مانده حساب: ${money(income - expense)} تومان\n" +
+                "بدهکاری: ${money(debt)} تومان\n" +
+                "بستانکاری: ${money(credit)} تومان"
+        }
 
         listBox.removeAllViews()
 
-        if (txs.isEmpty()) {
-            listBox.addView(
-                label("هنوز تراکنشی ثبت نشده است.", 14, Color.GRAY)
-            )
+        val visibleTxs = when (currentPage) {
+            "home" -> txs.take(5)
+            "accounts" -> txs.filter {
+                it.kind == "بدهکاری" || it.kind == "بستانکاری"
+            }
+            "reports" -> monthlyTxs
+            else -> txs
+        }
+
+        if (visibleTxs.isEmpty()) {
+            val emptyMessage = when (currentPage) {
+                "accounts" -> "هنوز بدهکاری یا بستانکاری ثبت نشده است."
+                "reports" -> "برای این ماه تراکنشی ثبت نشده است."
+                else -> "هنوز تراکنشی ثبت نشده است."
+            }
+            listBox.addView(label(emptyMessage, 14, Color.GRAY))
             return
         }
 
-        txs.forEach { transaction ->
+        visibleTxs.forEach { transaction ->
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -328,7 +462,6 @@ class MainActivity : Activity() {
 
             val deleteButton = Button(this).apply {
                 text = "حذف"
-
                 setOnClickListener {
                     AlertDialog.Builder(this@MainActivity)
                         .setMessage("این تراکنش حذف شود؟")
@@ -345,17 +478,12 @@ class MainActivity : Activity() {
             actions.addView(editButton)
             actions.addView(deleteButton)
             card.addView(actions)
-
             listBox.addView(card, matchWrap())
 
             val divider = View(this).apply {
                 setBackgroundColor(0xFFE5E1D8.toInt())
             }
-
-            listBox.addView(
-                divider,
-                LinearLayout.LayoutParams(-1, dp(1))
-            )
+            listBox.addView(divider, LinearLayout.LayoutParams(-1, dp(1)))
         }
     }
 
