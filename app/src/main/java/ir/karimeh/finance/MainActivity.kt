@@ -55,9 +55,13 @@ class MainActivity : Activity() {
 
     private val txs = mutableListOf<Tx>()
     private val products = mutableListOf<InventoryProduct>()
+    private val customers = mutableListOf<String>()
+    private var reportRange = "ماهانه"
+    private var reportRangeSpinner: Spinner? = null
     private lateinit var headerDate: TextView
     private lateinit var summary: TextView
     private lateinit var listBox: LinearLayout
+    private lateinit var customersBox: LinearLayout
     private lateinit var pageContainer: FrameLayout
     private lateinit var bottomNav: LinearLayout
 
@@ -82,6 +86,7 @@ class MainActivity : Activity() {
 
         loadData()
         loadInventory()
+        loadCustomers()
         buildUi()
         refresh()
         handler.post(clockRunnable)
@@ -410,7 +415,7 @@ class MainActivity : Activity() {
                     setBackgroundColor(Color.WHITE)
                 }
                 card.addView(label(product.name, 17, GREEN, true))
-                card.addView(label("واحد: ${product.unit}\nمجموع خرید: ${qty(product.totalPurchased)} ${product.unit}\nموجودی فعلی: ${qty(product.stock)} ${product.unit}\nقیمت خرید میانگین: ${money(avgCost)} تومان\nقیمت فروش: ${money(product.salePrice)} تومان\nمجموع هزینه خرید: ${money(product.totalPurchaseCost)} تومان\nفروش کل: ${money(product.totalSalesRevenue)} تومان\nسود ناخالص: ${money(product.totalSalesRevenue - product.costOfGoodsSold)} تومان", 14, DARK))
+                card.addView(label("واحد: ${product.unit}\nمجموع خرید: ${qty(product.totalPurchased)} ${product.unit}\nموجودی فعلی: ${qty(product.stock)} ${product.unit}\nقیمت خرید میانگین: ${money(avgCost)} تومان\nبه حروف: ${numberToPersianWords(avgCost)} تومان\nقیمت فروش: ${money(product.salePrice)} تومان\nبه حروف: ${numberToPersianWords(product.salePrice)} تومان\nمجموع هزینه خرید: ${money(product.totalPurchaseCost)} تومان\nبه حروف: ${numberToPersianWords(product.totalPurchaseCost)} تومان\nفروش کل: ${money(product.totalSalesRevenue)} تومان\nسود ناخالص: ${money(product.totalSalesRevenue - product.costOfGoodsSold)} تومان", 14, DARK))
                 val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
                 val buy = Button(this).apply { text = "خرید مجدد"; setOnClickListener { inventoryMovement(product, true) { renderInventory() } } }
                 val sell = Button(this).apply { text = "ثبت فروش"; setOnClickListener { inventoryMovement(product, false) { renderInventory() } } }
@@ -439,22 +444,45 @@ class MainActivity : Activity() {
         val quantity = field("مقدار خرید اولیه", true)
         val unit = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("کیلوگرم", "عدد / تعداد")) }
         val buy = field("قیمت خرید هر واحد (تومان)", true)
+        val buyWords = label("", 12, GREEN)
+        attachWords(buy, buyWords)
         val sell = field("قیمت فروش هر واحد (تومان)", true)
-        box.addView(name); box.addView(quantity); box.addView(unit); box.addView(buy); box.addView(sell)
+        val sellWords = label("", 12, GREEN)
+        attachWords(sell, sellWords)
+        val totalWords = label("", 12, GREEN)
+        val payment = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("نقدی", "نسیه")) }
+        fun updateTotalWords() {
+            val q = quantity.text.toString().toEnglishDigits().toDoubleOrNull() ?: 0.0
+            val b = buy.text.toString().toEnglishDigits().replace(",", "").replace("٬", "").toLongOrNull() ?: 0L
+            val total = (q * b).toLong()
+            totalWords.text = if (total > 0) "هزینه کل خرید: ${money(total)} تومان\nبه حروف: ${numberToPersianWords(total)} تومان" else ""
+        }
+        val watcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateTotalWords() }
+            override fun afterTextChanged(s: Editable?) {}
+        }
+        quantity.addTextChangedListener(watcher); buy.addTextChangedListener(watcher)
+        box.addView(name); box.addView(quantity); box.addView(unit); box.addView(buy); box.addView(buyWords)
+        box.addView(sell); box.addView(sellWords); box.addView(totalWords)
+        box.addView(label("روش خرید اولیه", 14, DARK, true)); box.addView(payment)
         AlertDialog.Builder(this).setTitle("افزودن کالا").setView(box)
             .setPositiveButton("ثبت کالا") { _, _ ->
                 val n = name.text.toString().trim()
                 val q = quantity.text.toString().toEnglishDigits().toDoubleOrNull() ?: 0.0
-                val b = buy.text.toString().toEnglishDigits().replace(",", "").toLongOrNull() ?: 0L
-                val v = sell.text.toString().toEnglishDigits().replace(",", "").toLongOrNull() ?: 0L
+                val b = buy.text.toString().toEnglishDigits().replace(",", "").replace("٬", "").toLongOrNull() ?: 0L
+                val v = sell.text.toString().toEnglishDigits().replace(",", "").replace("٬", "").toLongOrNull() ?: 0L
                 if (n.isBlank() || q <= 0 || b <= 0 || v <= 0) {
                     Toast.makeText(this, "نام، مقدار و قیمت‌ها را درست وارد کن", Toast.LENGTH_SHORT).show(); return@setPositiveButton
                 }
-                val product = InventoryProduct(System.currentTimeMillis(), n, unit.selectedItem.toString(), q, 0.0, q, (q*b).toLong(), 0L, 0L, v)
+                val amount = (q * b).toLong()
+                val product = InventoryProduct(System.currentTimeMillis(), n, unit.selectedItem.toString(), q, 0.0, q, amount, 0L, 0L, v)
                 products.add(product)
-                addInventoryCashTx("برداشت", (q*b).toLong(), "خرید موجودی: $n", "INV|BUY|${product.id}")
+                val isCredit = payment.selectedItemPosition == 1
+                addInventoryCashTx(if (isCredit) "بستانکاری" else "برداشت", amount,
+                    if (isCredit) "بدهی به فروشنده بابت خرید: $n" else "خرید موجودی: $n", "INV|BUY|${product.id}")
                 saveInventory(); saveData(); done()
-                Toast.makeText(this, "کالا ثبت شد و مبلغ خرید از مانده نقدی کسر شد", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, if (isCredit) "کالا ثبت شد؛ مبلغ خرید به بدهی فروشنده اضافه شد" else "کالا ثبت شد و مبلغ خرید از مانده نقدی کسر شد", Toast.LENGTH_SHORT).show()
             }.setNegativeButton("انصراف", null).show()
     }
 
@@ -462,26 +490,80 @@ class MainActivity : Activity() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), dp(8)) }
         val quantity = EditText(this).apply { hint = "مقدار ${product.unit}"; inputType = 8194; setSingleLine(true) }
         val price = EditText(this).apply { hint = if (purchase) "قیمت خرید هر واحد" else "قیمت فروش هر واحد"; inputType = 2; setSingleLine(true); setText((if (purchase) (product.totalPurchaseCost / product.totalPurchased.coerceAtLeast(1.0)).toLong() else product.salePrice).toString()) }
-        box.addView(quantity); box.addView(price)
+        val priceWords = label("", 12, GREEN); attachWords(price, priceWords)
+        val payment = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("نقدی", "نسیه")) }
+        box.addView(quantity); box.addView(price); box.addView(priceWords)
+        box.addView(label(if (purchase) "روش پرداخت خرید" else "نوع فروش", 14, DARK, true)); box.addView(payment)
+
+        val customerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val customerSpinner = Spinner(this)
+        val customerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, customers.toMutableList())
+        customerSpinner.adapter = customerAdapter
+        val addCustomer = Button(this).apply { text = "+ مشتری"; setOnClickListener {
+            addCustomerDialog { added ->
+                customerAdapter.clear(); customerAdapter.addAll(customers); customerAdapter.notifyDataSetChanged()
+                val index = customers.indexOf(added); if (index >= 0) customerSpinner.setSelection(index)
+            }
+        } }
+        customerRow.addView(customerSpinner, LinearLayout.LayoutParams(0, -2, 1f)); customerRow.addView(addCustomer)
+        box.addView(customerRow)
+        customerRow.visibility = View.GONE
+        payment.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                customerRow.visibility = if (!purchase && position == 1) View.VISIBLE else View.GONE
+            }
+        }
         AlertDialog.Builder(this).setTitle(if (purchase) "خرید مجدد: ${product.name}" else "ثبت فروش: ${product.name}").setView(box)
             .setPositiveButton("ثبت") { _, _ ->
                 val q = quantity.text.toString().toEnglishDigits().toDoubleOrNull() ?: 0.0
-                val p = price.text.toString().toEnglishDigits().replace(",", "").toLongOrNull() ?: 0L
+                val p = price.text.toString().toEnglishDigits().replace(",", "").replace("٬", "").toLongOrNull() ?: 0L
                 if (q <= 0 || p <= 0) { Toast.makeText(this, "مقدار و قیمت معتبر وارد کن", Toast.LENGTH_SHORT).show(); return@setPositiveButton }
                 if (!purchase && q > product.stock) { Toast.makeText(this, "موجودی کافی نیست؛ موجودی فعلی ${qty(product.stock)} است", Toast.LENGTH_LONG).show(); return@setPositiveButton }
+                val isCredit = payment.selectedItemPosition == 1
+                if (!purchase && isCredit && customers.isEmpty()) { Toast.makeText(this, "ابتدا یک مشتری ثبت کن", Toast.LENGTH_LONG).show(); return@setPositiveButton }
                 val amount = (q * p).toLong()
                 if (purchase) {
                     product.totalPurchased += q; product.stock += q; product.totalPurchaseCost += amount
-                    addInventoryCashTx("برداشت", amount, "خرید موجودی: ${product.name}", "INV|BUY|${product.id}")
+                    addInventoryCashTx(if (isCredit) "بستانکاری" else "برداشت", amount,
+                        if (isCredit) "بدهی به فروشنده بابت خرید: ${product.name}" else "خرید موجودی: ${product.name}", "INV|BUY|${product.id}")
                 } else {
                     val averageCost = if (product.totalPurchased > 0) product.totalPurchaseCost / product.totalPurchased else 0.0
                     val cogs = (q * averageCost).toLong()
                     product.totalSold += q; product.stock -= q; product.totalSalesRevenue += amount; product.costOfGoodsSold += cogs; product.salePrice = p
-                    addInventoryCashTx("واریزی", amount, "فروش کالا: ${product.name}", "INV|SELL|${product.id}")
+                    val customer = if (isCredit) customers.getOrNull(customerSpinner.selectedItemPosition).orEmpty() else ""
+                    addInventoryCashTx(if (isCredit) "بدهکاری" else "واریزی", amount,
+                        if (isCredit) "طلب از مشتری: $customer | فروش ${product.name}" else "فروش کالا: ${product.name}",
+                        if (isCredit) "INV|SELL|${product.id}|CREDIT|$customer" else "INV|SELL|${product.id}")
                 }
                 saveInventory(); saveData(); done(); refresh()
-                Toast.makeText(this, if (purchase) "خرید ثبت شد و از مانده نقدی کسر شد" else "فروش ثبت شد و به مانده نقدی اضافه شد", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, when { purchase && isCredit -> "خرید ثبت شد و به بدهی فروشنده اضافه شد"; purchase -> "خرید ثبت شد و از مانده نقدی کسر شد"; isCredit -> "فروش نسیه ثبت شد؛ طلب مشتری افزایش یافت"; else -> "فروش ثبت شد و به مانده نقدی اضافه شد" }, Toast.LENGTH_SHORT).show()
             }.setNegativeButton("انصراف", null).show()
+    }
+
+    private fun addCustomerDialog(onAdded: (String) -> Unit = {}) {
+        val input = EditText(this).apply { hint = "نام مشتری"; setSingleLine(true) }
+        AlertDialog.Builder(this).setTitle("ثبت مشتری جدید").setView(input)
+            .setPositiveButton("ثبت") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isBlank()) { Toast.makeText(this, "نام مشتری را وارد کن", Toast.LENGTH_SHORT).show(); return@setPositiveButton }
+                if (!customers.contains(name)) customers.add(name)
+                saveCustomers(); onAdded(name)
+            }.setNegativeButton("انصراف", null).show()
+    }
+
+    private fun saveCustomers() {
+        prefs.edit().putString("karimeh_customers", JSONArray(customers).toString()).apply()
+    }
+
+    private fun loadCustomers() {
+        try {
+            val array = JSONArray(prefs.getString("karimeh_customers", "[]"))
+            for (i in 0 until array.length()) {
+                val name = array.optString(i).trim()
+                if (name.isNotBlank() && !customers.contains(name)) customers.add(name)
+            }
+        } catch (_: Exception) { }
     }
 
     private fun editInventoryProduct(product: InventoryProduct, done: () -> Unit) {
@@ -539,6 +621,15 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
         }
         content.addView(listBox, matchWrap())
+        content.addView(label("فهرست مشتریان", 18, GREEN, true))
+        val addCustomerButton = Button(this).apply {
+            text = "＋ ثبت مشتری جدید"
+            setTextColor(Color.WHITE); setBackgroundColor(GREEN)
+            setOnClickListener { addCustomerDialog { refresh() } }
+        }
+        content.addView(addCustomerButton, matchWrap())
+        customersBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(customersBox, matchWrap())
     }
 
     private fun buildReportsPage(content: LinearLayout) {
@@ -549,12 +640,48 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
         }
         content.addView(summary, matchWrap())
-
-        content.addView(label("گزارش این ماه", 18, GREEN, true))
-        listBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        content.addView(label("بازه گزارش", 15, GREEN, true))
+        reportRangeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("روزانه", "هفتگی", "ماهانه"))
+            setSelection(listOf("روزانه", "هفتگی", "ماهانه").indexOf(reportRange).coerceAtLeast(0))
         }
+        content.addView(reportRangeSpinner, matchWrap())
+        listBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(listBox, matchWrap())
+        reportRangeSpinner?.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                reportRange = listOf("روزانه", "هفتگی", "ماهانه")[position]
+                refresh()
+            }
+        }
+    }
+
+    private fun transactionGregorianDate(date: String): Calendar? {
+        return try {
+            val parts = date.split("/")
+            if (parts.size != 3) return null
+            val y = parts[0].toInt(); val m = parts[1].toInt(); val d = parts[2].toInt()
+            Jalali.toGregorian(y, m, d).apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun transactionsForReport(): List<Tx> {
+        val today = Jalali.today()
+        val monthPrefix = String.format(Locale.US, "%04d/%02d/", today.year, today.month)
+        if (reportRange == "ماهانه") return txs.filter { it.date.startsWith(monthPrefix) }
+        val todayGregorian = Jalali.toGregorian(today.year, today.month, today.day).apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        if (reportRange == "روزانه") return txs.filter { it.date == today.format() }
+        val weekStart = (todayGregorian.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -(get(Calendar.DAY_OF_WEEK) % 7)) }
+        val weekEnd = (weekStart.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 7) }
+        return txs.filter { tx ->
+            val date = transactionGregorianDate(tx.date) ?: return@filter false
+            date.timeInMillis >= weekStart.timeInMillis && date.timeInMillis < weekEnd.timeInMillis
+        }
     }
 
     private fun updateClock() {
@@ -574,56 +701,70 @@ class MainActivity : Activity() {
         val debt = txs.filter { it.kind == "بدهکاری" }.sumOf { it.amount }
         val credit = txs.filter { it.kind == "بستانکاری" }.sumOf { it.amount }
         val capital = txs.filter { it.kind == "آورده" }.sumOf { it.amount }
-        val totalBalance = income + capital + debt - expense - credit
+        val cashBalance = income + capital - expense
+        val totalBalance = cashBalance + debt - credit
 
         if (!::summary.isInitialized || !::listBox.isInitialized) return
 
-        val today = Jalali.today()
-        val monthPrefix = String.format(Locale.US, "%04d/%02d/", today.year, today.month)
-        val monthlyTxs = txs.filter { it.date.startsWith(monthPrefix) }
-        val monthlyIncome = monthlyTxs.filter { it.kind == "واریزی" || it.kind == "آورده" }.sumOf { it.amount }
-        val monthlyExpense = monthlyTxs.filter { it.kind == "برداشت" }.sumOf { it.amount }
-        val monthlyDebt = monthlyTxs.filter { it.kind == "بدهکاری" }.sumOf { it.amount }
-        val monthlyCredit = monthlyTxs.filter { it.kind == "بستانکاری" }.sumOf { it.amount }
+        val reportTxs = transactionsForReport()
+        val reportIncome = reportTxs.filter { it.kind == "واریزی" || it.kind == "آورده" }.sumOf { it.amount }
+        val reportExpense = reportTxs.filter { it.kind == "برداشت" }.sumOf { it.amount }
+        val reportDebt = reportTxs.filter { it.kind == "بدهکاری" }.sumOf { it.amount }
+        val reportCredit = reportTxs.filter { it.kind == "بستانکاری" }.sumOf { it.amount }
 
         summary.text = when (currentPage) {
             "accounts" ->
                 "طلب از دیگران: ${money(debt)} تومان\n" +
                 "بدهی به دیگران: ${money(credit)} تومان\n" +
                 "اثر خالص حساب‌ها: ${money(debt - credit)} تومان\n" +
-                "مانده کل با طلب و بدهی: ${money(totalBalance)} تومان"
+                "مانده نقدی: ${money(cashBalance)} تومان\n" +
+                "دارایی خالص با طلب و بدهی: ${money(totalBalance)} تومان"
             "reports" ->
-                "واریزی و آورده این ماه: ${money(monthlyIncome)} تومان\n" +
-                "برداشت این ماه: ${money(monthlyExpense)} تومان\n" +
-                "مانده این ماه با حساب‌ها: ${money(monthlyIncome + monthlyDebt - monthlyExpense - monthlyCredit)} تومان\n" +
-                "تعداد تراکنش‌های ماه: ${monthlyTxs.size}"
+                "گزارش ${reportRange}: ${if (reportRange == "روزانه") Jalali.today().format() else if (reportRange == "هفتگی") "هفته جاری" else Jalali.monthName(Jalali.today().month) + " " + Jalali.today().year}\n" +
+                "واریزی و آورده: ${money(reportIncome)} تومان\n" +
+                "برداشت: ${money(reportExpense)} تومان\n" +
+                "طلب: ${money(reportDebt)} تومان\n" +
+                "بدهی: ${money(reportCredit)} تومان\n" +
+                "تغییر نقدی: ${money(reportIncome - reportExpense)} تومان\n" +
+                "مانده خالص با طلب و بدهی: ${money(reportIncome + reportDebt - reportExpense - reportCredit)} تومان\n" +
+                "تعداد تراکنش‌ها: ${reportTxs.size}"
             "transactions" ->
                 "تعداد تراکنش‌ها: ${txs.size}\n" +
-                "مانده کل: ${money(totalBalance)} تومان"
+                "مانده نقدی: ${money(cashBalance)} تومان\n" +
+                "دارایی خالص با طلب و بدهی: ${money(totalBalance)} تومان"
             else ->
                 "کل واریزی: ${money(income)} تومان\n" +
                 "آورده: ${money(capital)} تومان\n" +
                 "کل برداشت: ${money(expense)} تومان\n" +
                 "طلب: ${money(debt)} تومان\n" +
                 "بدهی: ${money(credit)} تومان\n" +
-                "مانده کل: ${money(totalBalance)} تومان"
+                "مانده نقدی: ${money(cashBalance)} تومان\n" +
+                "دارایی خالص با طلب و بدهی: ${money(totalBalance)} تومان"
         }
 
         listBox.removeAllViews()
+        if (currentPage == "accounts" && ::customersBox.isInitialized) {
+            customersBox.removeAllViews()
+            if (customers.isEmpty()) customersBox.addView(label("هنوز مشتری ثبت نشده است.", 13, Color.GRAY))
+            customers.forEach { customerName ->
+                val customerDebt = txs.filter { it.kind == "بدهکاری" && it.category.startsWith("طلب از مشتری: $customerName |") }.sumOf { it.amount }
+                customersBox.addView(label("$customerName  |  طلب: ${money(customerDebt)} تومان", 14, DARK))
+            }
+        }
 
         val visibleTxs = when (currentPage) {
             "home" -> txs.take(5)
             "accounts" -> txs.filter {
                 it.kind == "بدهکاری" || it.kind == "بستانکاری"
             }
-            "reports" -> monthlyTxs
+            "reports" -> reportTxs
             else -> txs
         }
 
         if (visibleTxs.isEmpty()) {
             val emptyMessage = when (currentPage) {
                 "accounts" -> "هنوز بدهکاری یا بستانکاری ثبت نشده است."
-                "reports" -> "برای این ماه تراکنشی ثبت نشده است."
+                "reports" -> "برای این بازه تراکنشی ثبت نشده است."
                 else -> "هنوز تراکنشی ثبت نشده است."
             }
             listBox.addView(label(emptyMessage, 14, Color.GRAY))
