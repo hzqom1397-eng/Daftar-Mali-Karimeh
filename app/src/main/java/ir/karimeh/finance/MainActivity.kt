@@ -11,6 +11,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -140,13 +141,13 @@ class MainActivity : Activity() {
         bottomNav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.WHITE)
-            elevation = dp(8).toFloat()
+            setBackgroundColor(0xFFFFFEFB.toInt())
+            elevation = dp(10).toFloat()
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
         root.addView(
             bottomNav,
-            LinearLayout.LayoutParams(-1, dp(64))
+            LinearLayout.LayoutParams(-1, dp(70))
         )
 
         setContentView(root)
@@ -221,7 +222,54 @@ class MainActivity : Activity() {
             "reports" -> buildReportsPage(content)
             "settings" -> buildSettingsPage(content)
         }
+        // Apply a consistent visual theme to every page after its views are created.
+        applyProfessionalStyle(pageContainer)
+        applyProfessionalStyle(bottomNav)
         refresh()
+    }
+
+    private fun applyProfessionalStyle(view: View) {
+        when (view) {
+            is Button -> {
+                val caption = view.text?.toString().orEmpty()
+                val buttonColor = if (caption.contains("دریافت طلب") || caption.contains("دریافت از مشتری")) GOLD else appPrimary()
+                view.background = GradientDrawable().apply {
+                    setColor(buttonColor)
+                    cornerRadius = dp(14).toFloat()
+                    setStroke(dp(1), if (buttonColor == GOLD) 0xFFB38D38.toInt() else appPrimary())
+                }
+                view.setTextColor(Color.WHITE)
+                view.textSize = 15f * appFontScale()
+                view.isAllCaps = false
+                view.typeface = appTypeface().let { Typeface.create(it, Typeface.BOLD) }
+                view.elevation = dp(2).toFloat()
+                view.setPadding(dp(14), dp(10), dp(14), dp(10))
+            }
+            is EditText -> {
+                view.background = GradientDrawable().apply {
+                    setColor(Color.WHITE)
+                    cornerRadius = dp(12).toFloat()
+                    setStroke(dp(1), 0xFFD8D2C5.toInt())
+                }
+                view.setPadding(dp(14), dp(12), dp(14), dp(12))
+                view.setTextColor(DARK)
+                view.setHintTextColor(0xFF8B8B86.toInt())
+                view.typeface = appTypeface()
+                view.textSize = 15f * appFontScale()
+            }
+            is TextView -> {
+                view.typeface = appTypeface().let { Typeface.create(it, if (((view.typeface?.style ?: Typeface.NORMAL) and Typeface.BOLD) != 0) Typeface.BOLD else Typeface.NORMAL) }
+            }
+            is LinearLayout -> {
+                // Preserve the existing card backgrounds while making spacing more consistent.
+                if (view.background == null && view !== bottomNav) {
+                    view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, view.paddingBottom)
+                }
+            }
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) applyProfessionalStyle(view.getChildAt(i))
+        }
     }
 
     private fun buildHomePage(content: LinearLayout) {
@@ -247,9 +295,12 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 setColor(Color.WHITE)
                 cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), 0xFFE6E1D5.toInt())
+                setStroke(dp(1), 0xFFE2D9C8.toInt())
             }
+            elevation = dp(3).toFloat()
         }
+        val accent = View(this).apply { setBackgroundColor(GOLD) }
+        card.addView(accent, LinearLayout.LayoutParams(-1, dp(3)))
         card.addView(label(title, 14, Color.GRAY, true))
         card.addView(label(value, 20, appPrimary(), true))
         if (detail.isNotBlank()) card.addView(label(detail, 13, DARK))
