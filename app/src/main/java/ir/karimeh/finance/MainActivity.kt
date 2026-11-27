@@ -6,6 +6,8 @@ import android.os.Handler
 import android.os.Looper
 import android.graphics.Color
 import android.graphics.Typeface
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -25,7 +27,11 @@ data class Tx(
     val amount: Long,
     val category: String,
     val note: String,
-    val date: String
+    val date: String,
+    val unit: String = "",
+    val quantity: Double = 0.0,
+    val purchasePrice: Long = 0L,
+    val salePrice: Long = 0L
 )
 
 class MainActivity : Activity() {
@@ -87,6 +93,8 @@ class MainActivity : Activity() {
         header.addView(label("دفتر مالی کریمه", 23, Color.WHITE, true))
         headerDate = label("", 13, Color.WHITE)
         header.addView(headerDate)
+        val goldStripe = View(this).apply { setBackgroundColor(GOLD) }
+        header.addView(goldStripe, LinearLayout.LayoutParams(-1, dp(3)))
         root.addView(header, LinearLayout.LayoutParams(-1, -2))
 
         pageContainer = FrameLayout(this).apply {
@@ -184,7 +192,8 @@ class MainActivity : Activity() {
         content.addView(label("نمای کلی مالی", 21, GREEN, true))
         summary = label("", 16, DARK, true).apply {
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            setBackgroundColor(Color.WHITE)
+            setBackgroundColor(GREEN)
+            setTextColor(Color.WHITE)
         }
         content.addView(summary, matchWrap())
 
@@ -206,16 +215,12 @@ class MainActivity : Activity() {
     }
 
     private fun buildTransactionsPage(content: LinearLayout) {
-        content.addView(label("ثبت تراکنش", 21, GREEN, true))
+        content.addView(label("ثبت تراکنش و کالا", 21, GREEN, true))
         content.addView(label("نوع ثبت", 14, DARK, true))
 
+        val types = listOf("واریزی", "برداشت", "آورده", "بدهکاری", "بستانکاری", "کالا")
         val type = Spinner(this)
-        val types = listOf("واریزی", "برداشت", "بدهکاری", "بستانکاری")
-        type.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            types
-        )
+        type.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, types)
         content.addView(type, matchWrap())
 
         val amount = EditText(this).apply {
@@ -225,13 +230,66 @@ class MainActivity : Activity() {
             setSingleLine(true)
         }
         content.addView(amount, matchWrap())
+        val amountWords = label("", 13, GREEN).apply { setPadding(dp(4), 0, dp(4), dp(8)) }
+        content.addView(amountWords, matchWrap())
+        attachWords(amount, amountWords)
 
         val category = EditText(this).apply {
-            hint = "نوع جنس / موضوع"
+            hint = "موضوع / نام جنس"
             textSize = 16f
             setSingleLine(true)
         }
         content.addView(category, matchWrap())
+
+        val productFields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setBackgroundColor(0xFFECE7D9.toInt())
+        }
+        content.addView(productFields, matchWrap())
+        productFields.addView(label("مشخصات کالا (برای ثبت کالا)", 15, GREEN, true))
+
+        val quantity = EditText(this).apply {
+            hint = "مقدار (مثلاً 2.5)"
+            inputType = 8194
+            setSingleLine(true)
+        }
+        productFields.addView(quantity, matchWrap())
+        val unit = Spinner(this)
+        unit.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("عدد", "کیلوگرم"))
+        productFields.addView(unit, matchWrap())
+
+        val purchasePrice = EditText(this).apply {
+            hint = "قیمت خرید هر واحد (تومان)"
+            inputType = 2
+            setSingleLine(true)
+        }
+        productFields.addView(purchasePrice, matchWrap())
+        val purchaseWords = label("", 13, GREEN).apply { setPadding(dp(4), 0, dp(4), dp(8)) }
+        productFields.addView(purchaseWords, matchWrap())
+        attachWords(purchasePrice, purchaseWords)
+
+        val salePrice = EditText(this).apply {
+            hint = "قیمت فروش هر واحد (تومان)"
+            inputType = 2
+            setSingleLine(true)
+        }
+        productFields.addView(salePrice, matchWrap())
+        val saleWords = label("", 13, GREEN).apply { setPadding(dp(4), 0, dp(4), dp(8)) }
+        productFields.addView(saleWords, matchWrap())
+        attachWords(salePrice, saleWords)
+
+        productFields.visibility = View.GONE
+        type.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val isProduct = types[position] == "کالا"
+                productFields.visibility = if (isProduct) View.VISIBLE else View.GONE
+                amount.visibility = if (isProduct) View.GONE else View.VISIBLE
+                amountWords.visibility = if (isProduct) View.GONE else View.VISIBLE
+                category.hint = if (isProduct) "نام جنس" else "موضوع / دسته"
+            }
+        }
 
         val note = EditText(this).apply {
             hint = "توضیحات"
@@ -241,30 +299,21 @@ class MainActivity : Activity() {
         }
         content.addView(note, matchWrap())
 
-        val dateRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
+        val dateRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val dateText = TextView(this).apply {
             text = "تاریخ: ${chosenDate.format()}"
             textSize = 15f
             setTextColor(DARK)
             setPadding(dp(8), dp(12), dp(8), dp(12))
         }
-
         val dateButton = Button(this).apply {
             text = "انتخاب تاریخ"
             setTextColor(Color.WHITE)
             setBackgroundColor(GREEN)
             setOnClickListener {
-                showJalaliPicker { selected ->
-                    chosenDate = selected
-                    dateText.text = "تاریخ: ${selected.format()}"
-                }
+                showJalaliPicker { selected -> chosenDate = selected; dateText.text = "تاریخ: ${selected.format()}" }
             }
         }
-
         dateRow.addView(dateText, LinearLayout.LayoutParams(0, dp(48), 1f))
         dateRow.addView(dateButton)
         content.addView(dateRow)
@@ -275,54 +324,41 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             setBackgroundColor(GREEN)
             setOnClickListener {
-                val raw = amount.text.toString()
-                    .trim()
-                    .replace(",", "")
-                    .replace("٬", "")
-                val value = raw.toLongOrNull()
+                val selectedKind = types[type.selectedItemPosition]
+                val rawAmount = amount.text.toString().trim().toEnglishDigits().replace(",", "").replace("٬", "")
+                val value = rawAmount.toLongOrNull()
+                val q = quantity.text.toString().trim().toEnglishDigits().toDoubleOrNull() ?: 0.0
+                val buy = purchasePrice.text.toString().trim().toEnglishDigits().replace(",", "").toLongOrNull() ?: 0L
+                val sell = salePrice.text.toString().trim().toEnglishDigits().replace(",", "").toLongOrNull() ?: 0L
+                val isProduct = selectedKind == "کالا"
 
-                if (value == null || value <= 0) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "مبلغ معتبر وارد کن",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                if (!isProduct && (value == null || value <= 0)) {
+                    Toast.makeText(this@MainActivity, "مبلغ معتبر وارد کن", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (isProduct && (category.text.toString().trim().isEmpty() || q <= 0 || buy <= 0 || sell <= 0)) {
+                    Toast.makeText(this@MainActivity, "نام جنس، مقدار و قیمت خرید و فروش را کامل وارد کن", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
 
-                txs.add(
-                    0,
-                    Tx(
-                        System.currentTimeMillis(),
-                        types[type.selectedItemPosition],
-                        value,
-                        category.text.toString().trim(),
-                        note.text.toString().trim(),
-                        chosenDate.format()
-                    )
-                )
-
+                txs.add(0, Tx(
+                    System.currentTimeMillis(), selectedKind, if (isProduct) 0L else value!!,
+                    category.text.toString().trim(), note.text.toString().trim(), chosenDate.format(),
+                    if (isProduct) unit.selectedItem.toString() else "", if (isProduct) q else 0.0,
+                    if (isProduct) buy else 0L, if (isProduct) sell else 0L
+                ))
                 saveData()
-                amount.setText("")
-                category.setText("")
-                note.setText("")
+                amount.setText(""); category.setText(""); note.setText(""); quantity.setText(""); purchasePrice.setText(""); salePrice.setText("")
                 chosenDate = Jalali.today()
                 dateText.text = "تاریخ: ${chosenDate.format()}"
                 refresh()
-
-                Toast.makeText(
-                    this@MainActivity,
-                    "ثبت شد",
-                    Toast.LENGTH_SHORT
-                ).show()
+                Toast.makeText(this@MainActivity, "ثبت شد", Toast.LENGTH_SHORT).show()
             }
         }
         content.addView(addButton, matchWrap())
 
-        content.addView(label("فهرست تراکنش‌ها", 19, GREEN, true))
-        listBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        content.addView(label("فهرست تراکنش‌ها و کالاها", 19, GREEN, true))
+        listBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(listBox, matchWrap())
     }
 
@@ -330,7 +366,8 @@ class MainActivity : Activity() {
         content.addView(label("حساب‌های باز", 21, GREEN, true))
         summary = label("", 16, DARK, true).apply {
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            setBackgroundColor(Color.WHITE)
+            setBackgroundColor(GREEN)
+            setTextColor(Color.WHITE)
         }
         content.addView(summary, matchWrap())
 
@@ -345,7 +382,8 @@ class MainActivity : Activity() {
         content.addView(label("گزارش‌های مالی", 21, GREEN, true))
         summary = label("", 16, DARK, true).apply {
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            setBackgroundColor(Color.WHITE)
+            setBackgroundColor(GREEN)
+            setTextColor(Color.WHITE)
         }
         content.addView(summary, matchWrap())
 
@@ -372,34 +410,40 @@ class MainActivity : Activity() {
         val expense = txs.filter { it.kind == "برداشت" }.sumOf { it.amount }
         val debt = txs.filter { it.kind == "بدهکاری" }.sumOf { it.amount }
         val credit = txs.filter { it.kind == "بستانکاری" }.sumOf { it.amount }
+        val capital = txs.filter { it.kind == "آورده" }.sumOf { it.amount }
+        val totalBalance = income + capital + debt - expense - credit
 
         if (!::summary.isInitialized || !::listBox.isInitialized) return
 
         val today = Jalali.today()
         val monthPrefix = String.format(Locale.US, "%04d/%02d/", today.year, today.month)
         val monthlyTxs = txs.filter { it.date.startsWith(monthPrefix) }
-        val monthlyIncome = monthlyTxs.filter { it.kind == "واریزی" }.sumOf { it.amount }
+        val monthlyIncome = monthlyTxs.filter { it.kind == "واریزی" || it.kind == "آورده" }.sumOf { it.amount }
         val monthlyExpense = monthlyTxs.filter { it.kind == "برداشت" }.sumOf { it.amount }
+        val monthlyDebt = monthlyTxs.filter { it.kind == "بدهکاری" }.sumOf { it.amount }
+        val monthlyCredit = monthlyTxs.filter { it.kind == "بستانکاری" }.sumOf { it.amount }
 
         summary.text = when (currentPage) {
             "accounts" ->
-                "مجموع بدهکاری: ${money(debt)} تومان\n" +
-                "مجموع بستانکاری: ${money(credit)} تومان\n" +
-                "اختلاف حساب: ${money(credit - debt)} تومان"
+                "طلب از دیگران: ${money(debt)} تومان\n" +
+                "بدهی به دیگران: ${money(credit)} تومان\n" +
+                "اثر خالص حساب‌ها: ${money(debt - credit)} تومان\n" +
+                "مانده کل با طلب و بدهی: ${money(totalBalance)} تومان"
             "reports" ->
-                "واریزی این ماه: ${money(monthlyIncome)} تومان\n" +
+                "واریزی و آورده این ماه: ${money(monthlyIncome)} تومان\n" +
                 "برداشت این ماه: ${money(monthlyExpense)} تومان\n" +
-                "مانده این ماه: ${money(monthlyIncome - monthlyExpense)} تومان\n" +
+                "مانده این ماه با حساب‌ها: ${money(monthlyIncome + monthlyDebt - monthlyExpense - monthlyCredit)} تومان\n" +
                 "تعداد تراکنش‌های ماه: ${monthlyTxs.size}"
             "transactions" ->
                 "تعداد تراکنش‌ها: ${txs.size}\n" +
-                "مانده حساب: ${money(income - expense)} تومان"
+                "مانده کل: ${money(totalBalance)} تومان"
             else ->
                 "کل واریزی: ${money(income)} تومان\n" +
+                "آورده: ${money(capital)} تومان\n" +
                 "کل برداشت: ${money(expense)} تومان\n" +
-                "مانده حساب: ${money(income - expense)} تومان\n" +
-                "بدهکاری: ${money(debt)} تومان\n" +
-                "بستانکاری: ${money(credit)} تومان"
+                "طلب: ${money(debt)} تومان\n" +
+                "بدهی: ${money(credit)} تومان\n" +
+                "مانده کل: ${money(totalBalance)} تومان"
         }
 
         listBox.removeAllViews()
@@ -430,14 +474,20 @@ class MainActivity : Activity() {
                 setBackgroundColor(Color.WHITE)
             }
 
-            card.addView(
-                label(
-                    "${transaction.kind} | ${money(transaction.amount)} تومان",
-                    16,
-                    GREEN,
-                    true
-                )
-            )
+            val titleText = if (transaction.kind == "کالا") {
+                "کالا: ${transaction.category}"
+            } else {
+                "${transaction.kind} | ${money(transaction.amount)} تومان"
+            }
+            card.addView(label(titleText, 16, GREEN, true))
+            if (transaction.kind == "کالا") {
+                card.addView(label(
+                    "مقدار: ${transaction.quantity} ${transaction.unit}\n" +
+                    "خرید هر واحد: ${money(transaction.purchasePrice)} تومان\n" +
+                    "فروش هر واحد: ${money(transaction.salePrice)} تومان",
+                    14, DARK
+                ))
+            }
 
             card.addView(
                 label(
@@ -523,7 +573,7 @@ class MainActivity : Activity() {
             .setTitle("ویرایش تراکنش")
             .setView(layout)
             .setPositiveButton("ذخیره") { _, _ ->
-                val value = amount.text.toString().toLongOrNull()
+                val value = amount.text.toString().toEnglishDigits().replace(",", "").toLongOrNull()
 
                 if (value != null && value > 0) {
                     val index = txs.indexOfFirst {
@@ -706,6 +756,10 @@ class MainActivity : Activity() {
                     .put("category", transaction.category)
                     .put("note", transaction.note)
                     .put("date", transaction.date)
+                    .put("unit", transaction.unit)
+                    .put("quantity", transaction.quantity)
+                    .put("purchasePrice", transaction.purchasePrice)
+                    .put("salePrice", transaction.salePrice)
             )
         }
 
@@ -730,11 +784,70 @@ class MainActivity : Activity() {
                         obj.getLong("amount"),
                         obj.optString("category"),
                         obj.optString("note"),
-                        obj.optString("date")
+                        obj.optString("date"),
+                        obj.optString("unit"),
+                        obj.optDouble("quantity", 0.0),
+                        obj.optLong("purchasePrice", 0L),
+                        obj.optLong("salePrice", 0L)
                     )
                 )
             }
         } catch (_: Exception) {
+        }
+    }
+
+    private fun attachWords(input: EditText, output: TextView) {
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val number = s?.toString()?.toEnglishDigits()?.replace(",", "")?.replace("٬", "")?.toLongOrNull()
+                output.text = if (number != null && number > 0) "به حروف: ${numberToPersianWords(number)} تومان" else ""
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+    }
+
+    private fun numberToPersianWords(number: Long): String {
+        if (number == 0L) return "صفر"
+        val units = arrayOf("", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه")
+        val teens = arrayOf("ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده")
+        val tens = arrayOf("", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود")
+        val hundreds = arrayOf("", "صد", "دویست", "سیصد", "چهارصد", "پانصد", "ششصد", "هفتصد", "هشتصد", "نهصد")
+        fun under1000(n: Int): String {
+            val parts = mutableListOf<String>()
+            if (n >= 100) parts.add(hundreds[n / 100])
+            val r = n % 100
+            if (r in 10..19) parts.add(teens[r - 10]) else {
+                if (r >= 20) parts.add(tens[r / 10])
+                if (r % 10 > 0) parts.add(units[r % 10])
+            }
+            return parts.joinToString(" و ")
+        }
+        val scales = arrayOf("", "هزار", "میلیون", "میلیارد", "تریلیون", "کوادریلیون")
+        var value = number
+        var scale = 0
+        val parts = mutableListOf<String>()
+        while (value > 0 && scale < scales.size) {
+            val chunk = (value % 1000).toInt()
+            if (chunk > 0) {
+                val word = under1000(chunk)
+                parts.add(if (scales[scale].isEmpty()) word else "$word ${scales[scale]}")
+            }
+            value /= 1000
+            scale++
+        }
+        return parts.asReversed().joinToString(" و ")
+    }
+
+    private fun String.toEnglishDigits(): String {
+        val persian = "۰۱۲۳۴۵۶۷۸۹"
+        val arabic = "٠١٢٣٤٥٦٧٨٩"
+        return buildString {
+            this@toEnglishDigits.forEach { ch ->
+                val p = persian.indexOf(ch)
+                val a = arabic.indexOf(ch)
+                append(when { p >= 0 -> ('0'.code + p).toChar(); a >= 0 -> ('0'.code + a).toChar(); else -> ch })
+            }
         }
     }
 
