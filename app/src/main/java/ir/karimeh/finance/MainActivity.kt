@@ -21,6 +21,19 @@ private const val GOLD = 0xFFC6A04A.toInt()
 private const val CREAM = 0xFFF7F4EA.toInt()
 private const val DARK = 0xFF202820.toInt()
 
+data class InventoryProduct(
+    val id: Long,
+    var name: String,
+    var unit: String,
+    var totalPurchased: Double,
+    var totalSold: Double,
+    var stock: Double,
+    var totalPurchaseCost: Long,
+    var totalSalesRevenue: Long,
+    var costOfGoodsSold: Long,
+    var salePrice: Long
+)
+
 data class Tx(
     val id: Long,
     val kind: String,
@@ -41,6 +54,7 @@ class MainActivity : Activity() {
     }
 
     private val txs = mutableListOf<Tx>()
+    private val products = mutableListOf<InventoryProduct>()
     private lateinit var headerDate: TextView
     private lateinit var summary: TextView
     private lateinit var listBox: LinearLayout
@@ -67,6 +81,7 @@ class MainActivity : Activity() {
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
 
         loadData()
+        loadInventory()
         buildUi()
         refresh()
         handler.post(clockRunnable)
@@ -128,6 +143,7 @@ class MainActivity : Activity() {
         val items = listOf(
             Triple("home", "خانه", "⌂"),
             Triple("transactions", "تراکنش‌ها", "＋"),
+            Triple("inventory", "لیست کالاها", "▣"),
             Triple("accounts", "حساب‌ها", "▤"),
             Triple("reports", "گزارش‌ها", "▥")
         )
@@ -182,6 +198,7 @@ class MainActivity : Activity() {
         when (page) {
             "home" -> buildHomePage(content)
             "transactions" -> buildTransactionsPage(content)
+            "inventory" -> buildInventoryPage(content)
             "accounts" -> buildAccountsPage(content)
             "reports" -> buildReportsPage(content)
         }
@@ -362,6 +379,152 @@ class MainActivity : Activity() {
         content.addView(listBox, matchWrap())
     }
 
+    private fun buildInventoryPage(content: LinearLayout) {
+        content.addView(label("لیست کالاها", 21, GREEN, true))
+        val inventorySummary = label("", 15, DARK, true).apply {
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setBackgroundColor(0xFFECE7D9.toInt())
+        }
+        content.addView(inventorySummary, matchWrap())
+        val inventoryList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(inventoryList, matchWrap())
+
+        fun renderInventory() {
+            val totalStockValue = products.sumOf { p ->
+                (p.totalPurchaseCost - p.costOfGoodsSold).coerceAtLeast(0L)
+            }
+            val totalCost = products.sumOf { it.totalPurchaseCost }
+            val totalSales = products.sumOf { it.totalSalesRevenue }
+            val totalProfit = products.sumOf { it.totalSalesRevenue - it.costOfGoodsSold }
+            inventorySummary.text = "تعداد کالاها: ${products.size}\nمجموع خریدها: ${money(totalCost)} تومان\nارزش موجودی فعلی: ${money(totalStockValue)} تومان\nفروش ثبت‌شده: ${money(totalSales)} تومان\nسود ناخالص فروش: ${money(totalProfit)} تومان"
+            inventoryList.removeAllViews()
+            if (products.isEmpty()) {
+                inventoryList.addView(label("هنوز کالایی ثبت نشده است. برای شروع، افزودن کالا را بزن.", 14, Color.GRAY))
+                return
+            }
+            products.forEach { product ->
+                val avgCost = if (product.totalPurchased > 0) (product.totalPurchaseCost / product.totalPurchased).toLong() else 0L
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    setBackgroundColor(Color.WHITE)
+                }
+                card.addView(label(product.name, 17, GREEN, true))
+                card.addView(label("واحد: ${product.unit}\nمجموع خرید: ${qty(product.totalPurchased)} ${product.unit}\nموجودی فعلی: ${qty(product.stock)} ${product.unit}\nقیمت خرید میانگین: ${money(avgCost)} تومان\nقیمت فروش: ${money(product.salePrice)} تومان\nمجموع هزینه خرید: ${money(product.totalPurchaseCost)} تومان\nفروش کل: ${money(product.totalSalesRevenue)} تومان\nسود ناخالص: ${money(product.totalSalesRevenue - product.costOfGoodsSold)} تومان", 14, DARK))
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                val buy = Button(this).apply { text = "خرید مجدد"; setOnClickListener { inventoryMovement(product, true) { renderInventory() } } }
+                val sell = Button(this).apply { text = "ثبت فروش"; setOnClickListener { inventoryMovement(product, false) { renderInventory() } } }
+                val edit = Button(this).apply { text = "ویرایش قیمت"; setOnClickListener { editInventoryProduct(product) { renderInventory() } } }
+                row.addView(buy, LinearLayout.LayoutParams(0, -2, 1f)); row.addView(sell, LinearLayout.LayoutParams(0, -2, 1f)); row.addView(edit, LinearLayout.LayoutParams(0, -2, 1f))
+                card.addView(row)
+                inventoryList.addView(card, matchWrap())
+            }
+        }
+
+        val add = Button(this).apply {
+            text = "＋ افزودن کالا / ثبت خرید اولیه"
+            setTextColor(Color.WHITE); setBackgroundColor(GREEN)
+            setOnClickListener { addInventoryProduct { renderInventory() } }
+        }
+        content.addView(add, matchWrap())
+        renderInventory()
+    }
+
+    private fun addInventoryProduct(done: () -> Unit) {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), dp(8)) }
+        fun field(hintText: String, numeric: Boolean = false): EditText = EditText(this).apply {
+            hint = hintText; textSize = 16f; if (numeric) inputType = 8194; setSingleLine(true)
+        }
+        val name = field("نام کالا / نوع جنس")
+        val quantity = field("مقدار خرید اولیه", true)
+        val unit = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("کیلوگرم", "عدد / تعداد")) }
+        val buy = field("قیمت خرید هر واحد (تومان)", true)
+        val sell = field("قیمت فروش هر واحد (تومان)", true)
+        box.addView(name); box.addView(quantity); box.addView(unit); box.addView(buy); box.addView(sell)
+        AlertDialog.Builder(this).setTitle("افزودن کالا").setView(box)
+            .setPositiveButton("ثبت کالا") { _, _ ->
+                val n = name.text.toString().trim()
+                val q = quantity.text.toString().toEnglishDigits().toDoubleOrNull() ?: 0.0
+                val b = buy.text.toString().toEnglishDigits().replace(",", "").toLongOrNull() ?: 0L
+                val v = sell.text.toString().toEnglishDigits().replace(",", "").toLongOrNull() ?: 0L
+                if (n.isBlank() || q <= 0 || b <= 0 || v <= 0) {
+                    Toast.makeText(this, "نام، مقدار و قیمت‌ها را درست وارد کن", Toast.LENGTH_SHORT).show(); return@setPositiveButton
+                }
+                val product = InventoryProduct(System.currentTimeMillis(), n, unit.selectedItem.toString(), q, 0.0, q, (q*b).toLong(), 0L, 0L, v)
+                products.add(product)
+                addInventoryCashTx("برداشت", (q*b).toLong(), "خرید موجودی: $n", "INV|BUY|${product.id}")
+                saveInventory(); saveData(); done()
+                Toast.makeText(this, "کالا ثبت شد و مبلغ خرید از مانده نقدی کسر شد", Toast.LENGTH_SHORT).show()
+            }.setNegativeButton("انصراف", null).show()
+    }
+
+    private fun inventoryMovement(product: InventoryProduct, purchase: Boolean, done: () -> Unit) {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), dp(8)) }
+        val quantity = EditText(this).apply { hint = "مقدار ${product.unit}"; inputType = 8194; setSingleLine(true) }
+        val price = EditText(this).apply { hint = if (purchase) "قیمت خرید هر واحد" else "قیمت فروش هر واحد"; inputType = 2; setSingleLine(true); setText((if (purchase) (product.totalPurchaseCost / product.totalPurchased.coerceAtLeast(1.0)).toLong() else product.salePrice).toString()) }
+        box.addView(quantity); box.addView(price)
+        AlertDialog.Builder(this).setTitle(if (purchase) "خرید مجدد: ${product.name}" else "ثبت فروش: ${product.name}").setView(box)
+            .setPositiveButton("ثبت") { _, _ ->
+                val q = quantity.text.toString().toEnglishDigits().toDoubleOrNull() ?: 0.0
+                val p = price.text.toString().toEnglishDigits().replace(",", "").toLongOrNull() ?: 0L
+                if (q <= 0 || p <= 0) { Toast.makeText(this, "مقدار و قیمت معتبر وارد کن", Toast.LENGTH_SHORT).show(); return@setPositiveButton }
+                if (!purchase && q > product.stock) { Toast.makeText(this, "موجودی کافی نیست؛ موجودی فعلی ${qty(product.stock)} است", Toast.LENGTH_LONG).show(); return@setPositiveButton }
+                val amount = (q * p).toLong()
+                if (purchase) {
+                    product.totalPurchased += q; product.stock += q; product.totalPurchaseCost += amount
+                    addInventoryCashTx("برداشت", amount, "خرید موجودی: ${product.name}", "INV|BUY|${product.id}")
+                } else {
+                    val averageCost = if (product.totalPurchased > 0) product.totalPurchaseCost / product.totalPurchased else 0.0
+                    val cogs = (q * averageCost).toLong()
+                    product.totalSold += q; product.stock -= q; product.totalSalesRevenue += amount; product.costOfGoodsSold += cogs; product.salePrice = p
+                    addInventoryCashTx("واریزی", amount, "فروش کالا: ${product.name}", "INV|SELL|${product.id}")
+                }
+                saveInventory(); saveData(); done(); refresh()
+                Toast.makeText(this, if (purchase) "خرید ثبت شد و از مانده نقدی کسر شد" else "فروش ثبت شد و به مانده نقدی اضافه شد", Toast.LENGTH_SHORT).show()
+            }.setNegativeButton("انصراف", null).show()
+    }
+
+    private fun editInventoryProduct(product: InventoryProduct, done: () -> Unit) {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), dp(8)) }
+        val name = EditText(this).apply { hint = "نام کالا"; setText(product.name) }
+        val sale = EditText(this).apply { hint = "قیمت فروش هر واحد"; inputType = 2; setText(product.salePrice.toString()) }
+        box.addView(name); box.addView(sale)
+        AlertDialog.Builder(this).setTitle("ویرایش کالا").setView(box).setPositiveButton("ذخیره") { _, _ ->
+            val newName = name.text.toString().trim(); val newPrice = sale.text.toString().toEnglishDigits().replace(",", "").toLongOrNull() ?: 0L
+            if (newName.isNotBlank() && newPrice > 0) { product.name = newName; product.salePrice = newPrice; saveInventory(); done() }
+        }.setNegativeButton("انصراف", null).show()
+    }
+
+    private fun addInventoryCashTx(kind: String, amount: Long, category: String, marker: String) {
+        txs.add(0, Tx(System.currentTimeMillis(), kind, amount, category, marker, Jalali.today().format()))
+    }
+
+    private fun saveInventory() {
+        val array = JSONArray()
+        products.forEach { p -> array.put(JSONObject().put("id", p.id).put("name", p.name).put("unit", p.unit)
+            .put("totalPurchased", p.totalPurchased).put("totalSold", p.totalSold).put("stock", p.stock)
+            .put("totalPurchaseCost", p.totalPurchaseCost).put("totalSalesRevenue", p.totalSalesRevenue)
+            .put("costOfGoodsSold", p.costOfGoodsSold).put("salePrice", p.salePrice)) }
+        prefs.edit().putString("inventory_products", array.toString()).apply()
+    }
+
+    private fun loadInventory() {
+        try {
+            val array = JSONArray(prefs.getString("inventory_products", "[]"))
+            for (i in 0 until array.length()) {
+                val o = array.getJSONObject(i)
+                products.add(InventoryProduct(o.getLong("id"), o.optString("name"), o.optString("unit", "عدد"),
+                    o.optDouble("totalPurchased"), o.optDouble("totalSold"), o.optDouble("stock"),
+                    o.optLong("totalPurchaseCost"), o.optLong("totalSalesRevenue"), o.optLong("costOfGoodsSold"), o.optLong("salePrice")))
+            }
+        } catch (_: Exception) { }
+    }
+
+    private fun qty(value: Double): String {
+        val raw = String.format(Locale.US, "%.3f", value).trimEnd('0').trimEnd('.')
+        return raw.toEnglishDigits()
+    }
+
     private fun buildAccountsPage(content: LinearLayout) {
         content.addView(label("حساب‌های باز", 21, GREEN, true))
         summary = label("", 16, DARK, true).apply {
@@ -497,8 +660,15 @@ class MainActivity : Activity() {
                 )
             )
 
-            if (transaction.note.isNotBlank()) {
+            if (transaction.note.isNotBlank() && !transaction.note.startsWith("INV|")) {
                 card.addView(label(transaction.note, 14, Color.GRAY))
+            }
+
+            if (transaction.note.startsWith("INV|")) {
+                card.addView(label("ثبت خودکار موجودی؛ برای تغییر از بخش لیست کالاها استفاده کن", 12, Color.GRAY))
+                listBox.addView(card, matchWrap())
+                listBox.addView(View(this).apply { setBackgroundColor(0xFFE5E1D8.toInt()) }, LinearLayout.LayoutParams(-1, dp(1)))
+                return@forEach
             }
 
             val actions = LinearLayout(this).apply {
