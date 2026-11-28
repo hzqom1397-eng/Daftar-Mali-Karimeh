@@ -40,5 +40,17 @@ android {
         jvmTarget = '17'
     }
  }
-applicationIdSuffix ".diagnostic"
-versionNameSuffix "-diagnostic"
+android {
+    // تنظیمات فعلی خودت
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".diagnostic"
+            versionNameSuffix "-diagnostic"
+        }
+
+        release {
+            // تنظیمات فعلی release را دست نزن
+        }
+    }
+}
