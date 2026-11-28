@@ -2,6 +2,8 @@ package ir.karimeh.finance
 
 import android.app.*
  import android.os.Bundle
+ import android.content.Intent
+ import android.net.Uri
  import android.os.Handler
  import android.os.Looper
  import android.graphics.Color
@@ -70,6 +72,7 @@ class MainActivity : Activity() {
     private var homeCardRow: LinearLayout? = null
 
     private var currentPage = "home"
+    private val backupFolderRequest = 7412
 
     private fun appPrimary(): Int = prefs.getInt("ui_primary", GREEN)
      private fun appBackground(): Int = prefs.getInt("ui_background", CREAM)
@@ -102,6 +105,7 @@ class MainActivity : Activity() {
         loadData()
          loadInventory()
          loadCustomers()
+         KarimehBackup.schedule(this)
          buildUi()
          refresh()
          handler.post(clockRunnable)
@@ -111,6 +115,23 @@ class MainActivity : Activity() {
          handler.removeCallbacks(clockRunnable)
          super.onDestroy()
      }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == backupFolderRequest && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            val flags = (data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) or
+                (data.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            try {
+                contentResolver.takePersistableUriPermission(uri, flags)
+                prefs.edit().putString(KarimehBackup.PREF_TREE_URI, uri.toString()).apply()
+                KarimehBackup.schedule(this)
+                Toast.makeText(this, "پوشه پشتیبان انتخاب شد؛ پشتیبان‌گیری ماهانه فعال است", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "ذخیره دسترسی پوشه انجام نشد: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     private fun buildUi() {
          val root = LinearLayout(this).apply {
@@ -448,6 +469,16 @@ class MainActivity : Activity() {
                  buildUi(); showPage("settings")
              }.show()
          }
+         settingButton("انتخاب پوشه پشتیبان", "یک‌بار پوشه‌ای در گوشی انتخاب کنید؛ پشتیبان ماهانه در همان‌جا ذخیره می‌شود") {
+             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+             }
+             startActivityForResult(intent, backupFolderRequest)
+         }
+         settingButton("پشتیبان‌گیری اکنون", "ذخیره فوری اطلاعات مشتریان، کالاها و تراکنش‌های مالی") {
+             val success = KarimehBackup.createBackup(this, false)
+             Toast.makeText(this, if (success) "نسخه پشتیبان ذخیره شد" else "ابتدا پوشه پشتیبان را انتخاب کنید یا دسترسی پوشه را بررسی کنید", Toast.LENGTH_LONG).show()
+         }
          settingButton("بازگشت به ظاهر اولیه", "بازگرداندن رنگ‌ها و اندازه نوشته به حالت اولیه") {
              prefs.edit().remove("ui_primary").remove("ui_background").remove("ui_font_scale").remove("ui_font").apply()
              window.statusBarColor = GREEN; window.navigationBarColor = GREEN
@@ -459,8 +490,8 @@ class MainActivity : Activity() {
          content.addView(label("ثبت تراکنش و کالا", 21, appPrimary(), true))
          content.addView(label("نوع ثبت", 14, DARK, true))
 
-        val types = listOf("واریزی", "برداشت", "آورده", "بدهکاری", "بستانکاری", "کالا")
-         val typeLabels = listOf("عملیات پولی  •  واریزی", "عملیات پولی  •  برداشت", "سرمایه  •  آورده", "حساب نسیه  •  بدهکاری", "حساب نسیه  •  بستانکاری", "مدیریت کالا  •  کالا")
+        val types = listOf("واریزی", "برداشت", "هزینه سایر", "آورده", "بدهکاری", "بستانکاری", "کالا")
+         val typeLabels = listOf("عملیات پولی  •  واریزی", "عملیات پولی  •  برداشت", "هزینه‌ها  •  هزینه سایر", "سرمایه  •  آورده", "حساب نسیه  •  بدهکاری", "حساب نسیه  •  بستانکاری", "مدیریت کالا  •  کالا")
          content.addView(label("دسته‌بندی ثبت", 14, DARK, true))
          val type = Spinner(this)
          type.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, typeLabels)
@@ -534,7 +565,7 @@ class MainActivity : Activity() {
                  productFields.visibility = if (isProduct) View.VISIBLE else View.GONE
                  amount.visibility = if (isProduct) View.GONE else View.VISIBLE
                  amountWords.visibility = if (isProduct) View.GONE else View.VISIBLE
-                 category.hint = if (isProduct) "نام جنس" else "موضوع / دسته"
+                 category.hint = when { isProduct -> "نام جنس"; types[position] == "هزینه سایر" -> "عنوان هزینه (مثلاً حمل‌ونقل)"; else -> "موضوع / دسته" }
              }
          }
 
@@ -995,7 +1026,7 @@ class MainActivity : Activity() {
 
     private fun refresh() {
          val income = txs.filter { it.kind == "واریزی" }.sumOf { it.amount }
-         val expense = txs.filter { it.kind == "برداشت" }.sumOf { it.amount }
+         val expense = txs.filter { it.kind == "برداشت" || it.kind == "هزینه سایر" }.sumOf { it.amount }
          val debtGross = txs.filter { it.kind == "بدهکاری" }.sumOf { it.amount }
          val debtSettled = txs.filter { it.kind == "دریافت طلب" }.sumOf { it.amount }
          val debt = (debtGross - debtSettled).coerceAtLeast(0L)
@@ -1010,7 +1041,7 @@ class MainActivity : Activity() {
 
         val reportTxs = transactionsForReport()
          val reportIncome = reportTxs.filter { it.kind == "واریزی" || it.kind == "آورده" }.sumOf { it.amount }
-         val reportExpense = reportTxs.filter { it.kind == "برداشت" }.sumOf { it.amount }
+         val reportExpense = reportTxs.filter { it.kind == "برداشت" || it.kind == "هزینه سایر" }.sumOf { it.amount }
          val reportDebt = reportTxs.filter { it.kind == "بدهکاری" }.sumOf { it.amount }
          val reportCredit = reportTxs.filter { it.kind == "بستانکاری" }.sumOf { it.amount }
          val reportPayDebt = reportTxs.filter { it.kind == "پرداخت بدهی" }.sumOf { it.amount }
@@ -1026,7 +1057,7 @@ class MainActivity : Activity() {
              "reports" ->
                  "گزارش ${reportRange}: ${if (reportRange == "روزانه") Jalali.today().format() else if (reportRange == "هفتگی") "هفته جاری" else Jalali.monthName(Jalali.today().month) + " " + Jalali.today().year}\n" +
                  "واریزی و آورده: ${money(reportIncome)} تومان\n" +
-                 "برداشت: ${money(reportExpense)} تومان\n" +
+                 "برداشت و هزینه سایر: ${money(reportExpense)} تومان\n" +
                  "طلب: ${money(reportDebt)} تومان\n" +
                  "بدهی: ${money(reportCredit)} تومان\n" +
                  "پرداخت بدهی: ${money(reportPayDebt)} تومان\n" +
